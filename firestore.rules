@@ -31,8 +31,8 @@ service cloud.firestore {
     }
 
     function isValidDoc() {
-      return incoming().keys().hasAll(['userId', 'name', 'fileUri', 'mimeType', 'createdAt'])
-        && incoming().keys().size() == 5
+      return incoming().keys().hasAll(['userId', 'name', 'fileUri', 'mimeType', 'category', 'createdAt'])
+        && incoming().keys().size() == 6
         && incoming().userId is string
         && incoming().name is string
         && incoming().name.size() > 0 && incoming().name.size() <= 200
@@ -40,6 +40,8 @@ service cloud.firestore {
         && incoming().fileUri.size() <= 1000
         && incoming().mimeType is string
         && incoming().mimeType.size() <= 100
+        && incoming().category is string
+        && incoming().category.size() <= 100
         && incoming().createdAt is timestamp;
     }
 
@@ -55,13 +57,16 @@ service cloud.firestore {
     }
 
     function isValidChat() {
-      return incoming().keys().hasAll(['userId', 'prompt', 'response', 'createdAt'])
-        && incoming().keys().size() == 4
+      return incoming().keys().hasAll(['userId', 'prompt', 'response', 'model', 'createdAt'])
+        && (incoming().keys().size() == 5 || (incoming().keys().size() == 6 && 'contextDocUri' in incoming().keys()))
         && incoming().userId is string
         && incoming().prompt is string
         && incoming().prompt.size() <= 50000
         && incoming().response is string
         && incoming().response.size() <= 50000
+        && incoming().model is string
+        && incoming().model.size() <= 100
+        && (!('contextDocUri' in incoming().keys()) || incoming().contextDocUri == null || (incoming().contextDocUri is string && incoming().contextDocUri.size() <= 1000))
         && incoming().createdAt is timestamp;
     }
 

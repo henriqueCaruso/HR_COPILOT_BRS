@@ -1,25 +1,25 @@
 import React from 'react';
 import { useAuth } from '../lib/AuthContext';
-import { Briefcase } from 'lucide-react';
+import { GraduationCap } from 'lucide-react';
 
 export default function Login() {
   const { loginWithGoogle } = useAuth();
 
   return (
     <div className="flex items-center justify-center min-h-screen bg-slate-50">
-      <div className="w-full max-w-md p-8 bg-white rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] text-center">
+      <div className="w-full max-w-md p-8 bg-white rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] text-center border border-slate-100">
         <div className="flex justify-center mb-6">
-          <div className="flex items-center justify-center w-16 h-16 rounded-2xl bg-blue-50 text-blue-600">
-            <Briefcase size={32} />
+          <div className="flex items-center justify-center w-16 h-16 rounded-2xl bg-indigo-50 text-indigo-600">
+            <GraduationCap size={32} />
           </div>
         </div>
-        <h1 className="text-2xl font-bold text-slate-800 mb-2">HR Copilot BRS</h1>
-        <p className="text-slate-500 mb-8">
-          Sua assistente inteligente para gestão de pessoas e criação de textos corporativos.
+        <h1 className="text-2xl font-bold text-slate-800 mb-2">RHIÁ - UniFECAF</h1>
+        <p className="text-slate-500 mb-8 font-light">
+          Sua assistente inteligente acadêmica e de gestão.
         </p>
         <button
           onClick={loginWithGoogle}
-          className="w-full py-3 px-4 flex items-center justify-center gap-3 rounded-xl border border-slate-200 bg-white text-slate-700 font-medium hover:bg-slate-50 transition-colors"
+          className="w-full py-3 px-4 flex items-center justify-center gap-3 rounded-xl border border-slate-200 bg-white text-slate-700 font-medium hover:bg-slate-50 transition-all shadow-sm"
         >
           <svg className="w-5 h-5" viewBox="0 0 24 24">
             <path

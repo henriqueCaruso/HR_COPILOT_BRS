@@ -26,7 +26,7 @@ export async function uploadDocument(file: File) {
   }
 }
 
-export async function generateChatResponse(prompt: string, documentUri?: string, documentMimeType?: string) {
+export async function generateChatResponse(prompt: string, modelName: string, documentUri?: string, documentMimeType?: string) {
   const ai = getGeminiAI();
   const contents = [];
   
@@ -41,10 +41,10 @@ export async function generateChatResponse(prompt: string, documentUri?: string,
   contents.push(prompt);
 
   const response = await ai.models.generateContent({
-    model: "gemini-3.1-pro-preview",
+    model: modelName || "gemini-3.1-pro-preview",
     contents: contents,
     config: {
-      systemInstruction: "You are an HR Copilot. Your role is to help Brazilian HR professionals generate corporate texts such as emails, announcements, and policies in Portuguese (pt-br). When provided with a document as context, base your answers on the principles and rules of that document.",
+      systemInstruction: "You are RHIÁ, an HR Copilot for UniFECAF. Your role is to help Brazilian HR professionals generate corporate texts such as emails, announcements, and policies in Portuguese (pt-br). When provided with a document as context, base your answers on the principles and rules of that document. You MUST always return generated texts wrapped inside formatted markdown code blocks for easy copying.",
     }
   });
 

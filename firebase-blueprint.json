@@ -19,9 +19,10 @@
         "name": { "type": "string" },
         "fileUri": { "type": "string" },
         "mimeType": { "type": "string" },
+        "category": { "type": "string" },
         "createdAt": { "type": "number" }
       },
-      "required": ["userId", "name", "fileUri", "mimeType", "createdAt"]
+      "required": ["userId", "name", "fileUri", "mimeType", "category", "createdAt"]
     },
     "Chat": {
       "title": "Chat",
@@ -31,9 +32,11 @@
         "userId": { "type": "string" },
         "prompt": { "type": "string" },
         "response": { "type": "string" },
+        "model": { "type": "string" },
+        "contextDocUri": { "type": ["string", "null"] },
         "createdAt": { "type": "number" }
       },
-      "required": ["userId", "prompt", "response", "createdAt"]
+      "required": ["userId", "prompt", "response", "model", "createdAt"]
     }
   },
   "firestore": {
