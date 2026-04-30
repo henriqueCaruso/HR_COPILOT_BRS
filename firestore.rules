@@ -1,0 +1,79 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function isValidUser() {
+      return incoming().keys().hasAll(['email', 'createdAt']) 
+        && incoming().keys().size() == 2
+        && incoming().email is string
+        && incoming().createdAt is timestamp;
+    }
+
+    match /users/{userId} {
+      allow get: if isAuthenticated() && request.auth.uid == userId;
+      allow create: if isAuthenticated() 
+        && request.auth.uid == userId 
+        && isValidUser()
+        && (incoming().email == request.auth.token.email || !('email' in request.auth.token) || incoming().email == null)
+        && incoming().createdAt == request.time;
+      allow update: if false; // Immutable
+    }
+
+    function isValidDoc() {
+      return incoming().keys().hasAll(['userId', 'name', 'fileUri', 'mimeType', 'createdAt'])
+        && incoming().keys().size() == 5
+        && incoming().userId is string
+        && incoming().name is string
+        && incoming().name.size() > 0 && incoming().name.size() <= 200
+        && incoming().fileUri is string
+        && incoming().fileUri.size() <= 1000
+        && incoming().mimeType is string
+        && incoming().mimeType.size() <= 100
+        && incoming().createdAt is timestamp;
+    }
+
+    match /documents/{documentId} {
+      allow read: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      allow list: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      allow create: if isAuthenticated()
+        && isValidDoc()
+        && incoming().userId == request.auth.uid
+        && incoming().createdAt == request.time;
+      allow delete: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      allow update: if false;
+    }
+
+    function isValidChat() {
+      return incoming().keys().hasAll(['userId', 'prompt', 'response', 'createdAt'])
+        && incoming().keys().size() == 4
+        && incoming().userId is string
+        && incoming().prompt is string
+        && incoming().prompt.size() <= 50000
+        && incoming().response is string
+        && incoming().response.size() <= 50000
+        && incoming().createdAt is timestamp;
+    }
+
+    match /chats/{chatId} {
+      allow read: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      allow list: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      allow create: if isAuthenticated()
+        && isValidChat()
+        && incoming().userId == request.auth.uid
+        && incoming().createdAt == request.time;
+      allow update: if false;
+      allow delete: if false;
+    }
+  }
+}

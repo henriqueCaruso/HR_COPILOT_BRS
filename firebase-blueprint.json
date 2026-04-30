@@ -1,0 +1,53 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "A user of the HR Copilot.",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string" },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["email", "createdAt"]
+    },
+    "Document": {
+      "title": "Document",
+      "description": "A document uploaded by a user for context.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "name": { "type": "string" },
+        "fileUri": { "type": "string" },
+        "mimeType": { "type": "string" },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["userId", "name", "fileUri", "mimeType", "createdAt"]
+    },
+    "Chat": {
+      "title": "Chat",
+      "description": "A chat interaction with the AI.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "prompt": { "type": "string" },
+        "response": { "type": "string" },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["userId", "prompt", "response", "createdAt"]
+    }
+  },
+  "firestore": {
+    "users/{userId}": {
+      "schema": { "$ref": "#/entities/User" },
+      "description": "Users collection."
+    },
+    "documents/{documentId}": {
+      "schema": { "$ref": "#/entities/Document" },
+      "description": "Uploaded documents."
+    },
+    "chats/{chatId}": {
+      "schema": { "$ref": "#/entities/Chat" },
+      "description": "Chat log."
+    }
+  }
+}
