@@ -1,17 +1,21 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useAuth } from '../lib/AuthContext';
-import { LogOut, Send, Bot, User, FileText, Loader2, Sparkles, MessageSquare, Mail, BrainCircuit, Copy, Check, BookOpen, Megaphone } from 'lucide-react';
+import { LogOut, Send, Bot, User, FileText, Loader2, Sparkles, MessageSquare, Mail, BrainCircuit, Copy, Check, BookOpen, Megaphone, Menu, X } from 'lucide-react';
 import DocumentUpload from './DocumentUpload';
 import { generateChatResponse } from '../lib/gemini';
 import { db } from '../lib/firebase';
-import { collection, addDoc, query, orderBy, onSnapshot, limit, where, serverTimestamp } from 'firebase/firestore';
-// Remove markdown since it's forbidden
-// import Markdown from 'react-markdown';
+import { collection, addDoc, query, orderBy, onSnapshot, limit, where, serverTimestamp, updateDoc, doc } from 'firebase/firestore';
 
 interface Message {
   id: string;
   role: 'user' | 'ai';
   text: string;
+}
+
+interface ChatSession {
+  id: string;
+  title: string;
+  updatedAt: any;
 }
 
 const MODELS = [
@@ -29,9 +33,10 @@ const FORMATS = [
 
 export default function ChatLayout() {
   const { user, logout } = useAuth();
-  const [messages, setMessages] = useState<Message[]>([
-    { id: 'initial', role: 'ai', text: 'Olá! Sou RHIÁ, sua assistente da UniFECAF. Como posso ajudar com demandas acadêmicas e de gestão de pessoas hoje?' }
-  ]);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [sessions, setSessions] = useState<ChatSession[]>([]);
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
+  const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [activeFolder, setActiveFolder] = useState<string | null>(null);
@@ -42,34 +47,48 @@ export default function ChatLayout() {
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // Load chat history from Firestore
+  // Load chat sessions
   useEffect(() => {
     if (!user) return;
     const q = query(
-      collection(db, 'chats'),
+      collection(db, 'chatSessions'),
       where('userId', '==', user.uid),
-      orderBy('createdAt', 'desc'),
+      orderBy('updatedAt', 'desc'),
       limit(20)
     );
-    
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      const history: Message[] = [];
-      snapshot.docs.reverse().forEach(docSnap => {
-        const data = docSnap.data();
-        if (data.userId === user.uid) {
-           history.push({ id: crypto.randomUUID(), role: 'user', text: data.prompt });
-           history.push({ id: crypto.randomUUID(), role: 'ai', text: data.response });
-        }
-      });
-      if (history.length > 0) {
-        setMessages([
-          { id: 'initial', role: 'ai', text: 'Histórico carregado. Em que posso ajudar hoje?' },
-          ...history
-        ]);
-      }
+      const sess = snapshot.docs.map(d => ({ id: d.id, ...d.data() })) as ChatSession[];
+      setSessions(sess);
     });
     return () => unsubscribe();
   }, [user]);
+
+  // Load messages for active session
+  useEffect(() => {
+    if (!user || !activeSessionId) {
+      setMessages([{ id: 'initial', role: 'ai', text: 'Olá! Sou RHIÁ, sua assistente da UniFECAF. Como posso ajudar com demandas acadêmicas e de gestão de pessoas hoje?' }]);
+      return;
+    }
+    const q = query(
+      collection(db, `chatSessions/${activeSessionId}/messages`),
+      orderBy('createdAt', 'asc'),
+      limit(100)
+    );
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const msgs = snapshot.docs.map(d => ({ id: d.id, ...d.data() })) as Message[];
+      if (msgs.length === 0) {
+        setMessages([{ id: 'initial', role: 'ai', text: 'Olá! Sou RHIÁ, sua assistente da UniFECAF. Como posso ajudar com demandas acadêmicas e de gestão de pessoas hoje?' }]);
+      } else {
+        setMessages(msgs);
+      }
+    });
+    return () => unsubscribe();
+  }, [user, activeSessionId]);
+
+  const handleNewChat = () => {
+    setActiveSessionId(null);
+    setMessages([{ id: 'initial', role: 'ai', text: 'Olá! Sou RHIÁ, sua assistente da UniFECAF. Como posso ajudar com demandas acadêmicas e de gestão de pessoas hoje?' }]);
+  };
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -88,22 +107,40 @@ export default function ChatLayout() {
     setMessages(prev => [...prev, { id: crypto.randomUUID(), role: 'user', text: userPrompt }]);
     setIsLoading(true);
 
+    let currentSessionId = activeSessionId;
+
     try {
+      if (!currentSessionId) {
+        const sessRef = await addDoc(collection(db, 'chatSessions'), {
+          userId: user?.uid,
+          title: userPrompt.substring(0, 40) + (userPrompt.length > 40 ? '...' : ''),
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp()
+        });
+        currentSessionId = sessRef.id;
+        setActiveSessionId(currentSessionId);
+      } else {
+        await updateDoc(doc(db, 'chatSessions', currentSessionId), {
+          updatedAt: serverTimestamp()
+        });
+      }
+
+      await addDoc(collection(db, `chatSessions/${currentSessionId}/messages`), {
+        userId: user?.uid,
+        role: 'user',
+        text: userPrompt,
+        createdAt: serverTimestamp()
+      });
+
       const aiResponse = await generateChatResponse(userPrompt, activeModel, activeDocs, isDeepThinking, activeFormat);
       
-      // Use random UUID for the AI message to satisfy unique key constraint
       const aiMessageId = crypto.randomUUID();
       setMessages(prev => [...prev, { id: aiMessageId, role: 'ai', text: aiResponse }]);
 
-      // Save to history
-      await addDoc(collection(db, 'chats'), {
+      await addDoc(collection(db, `chatSessions/${currentSessionId}/messages`), {
         userId: user?.uid,
-        prompt: userPrompt,
-        response: aiResponse,
-        model: activeModel,
-        format: activeFormat || null,
-        isThinking: isDeepThinking,
-        contextFolder: activeFolder || null,
+        role: 'ai',
+        text: aiResponse,
         createdAt: serverTimestamp()
       });
 
@@ -127,23 +164,45 @@ export default function ChatLayout() {
   };
 
   return (
-    <div className="flex h-screen bg-white font-sans text-slate-800">
+    <div className="flex h-screen bg-white font-sans text-slate-800 overflow-hidden relative">
+      {/* Overlay for mobile sidebar */}
+      {isSidebarOpen && (
+        <div 
+          className="fixed inset-0 bg-slate-900/50 z-20 md:hidden"
+          onClick={() => setIsSidebarOpen(false)}
+        />
+      )}
+
       {/* Sidebar */}
-      <aside className="w-80 bg-slate-50 border-r border-slate-200 flex flex-col items-center">
+      <aside className={`w-80 bg-slate-50 border-r border-slate-200 flex flex-col items-center absolute md:relative z-30 h-full transition-transform duration-300 md:translate-x-0 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
         <div className="p-6 border-b border-slate-200 w-full bg-white shadow-sm z-10 relative">
-          <div className="flex items-center gap-2 mb-1">
-            <div className="w-8 h-8 rounded-lg bg-indigo-600 text-white flex items-center justify-center">
-              <Sparkles size={18} />
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-lg bg-indigo-600 text-white flex items-center justify-center">
+                <Sparkles size={18} />
+              </div>
+              <h2 className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-indigo-600 to-blue-600">
+                RH IA UniFECAF
+              </h2>
             </div>
-            <h2 className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-indigo-600 to-blue-600">
-              RHIÁ UniFECAF
-            </h2>
+            <button className="md:hidden p-1 text-slate-400 hover:text-slate-600" onClick={() => setIsSidebarOpen(false)}>
+              <X size={20} />
+            </button>
           </div>
-          <p className="text-xs text-slate-500 font-medium">SISTEMA INTEGRADO DE RH</p>
+          <button 
+            onClick={() => {
+              handleNewChat();
+              setIsSidebarOpen(false);
+            }}
+            className="w-full py-2.5 px-4 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-medium rounded-xl border border-indigo-200 flex items-center justify-center gap-2 transition-all hover:scale-[1.02] active:scale-95"
+          >
+            <MessageSquare size={16} />
+            Novo Chat
+          </button>
         </div>
 
         <div className="w-full px-6 py-4 border-b border-slate-200">
-          <label className="block text-xs font-semibold text-slate-500 mb-2 uppercase tracking-wide">
+          <label className="block text-xs font-semibold text-slate-500 mb-2 uppercase tracking-wide transition-colors">
             Modelo de Inteligência
           </label>
           <select 
@@ -165,13 +224,30 @@ export default function ChatLayout() {
           />
 
           {activeFolder && (
-            <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-3 flex items-start gap-3">
+            <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-3 flex items-start gap-3 transition-all animate-fade-in">
               <div className="p-2 bg-indigo-100 text-indigo-600 rounded-lg shrink-0">
                 <FileText size={16} />
               </div>
               <div className="min-w-0">
                 <p className="text-sm font-semibold text-slate-800 truncate" title={activeFolder}>Pasta: {activeFolder}</p>
                 <p className="text-xs text-indigo-600 font-medium mt-0.5">{activeDocs.length} documentos no contexto</p>
+              </div>
+            </div>
+          )}
+
+          {sessions.length > 0 && (
+            <div className="mt-4">
+              <h3 className="text-xs font-semibold text-slate-500 mb-3 uppercase tracking-wide">Histórico</h3>
+              <div className="space-y-1">
+                {sessions.map(s => (
+                  <button
+                    key={s.id}
+                    onClick={() => setActiveSessionId(s.id)}
+                    className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-all ${activeSessionId === s.id ? 'bg-indigo-100 text-indigo-700 font-medium' : 'text-slate-600 hover:bg-slate-100'}`}
+                  >
+                    <p className="truncate">{s.title}</p>
+                  </button>
+                ))}
               </div>
             </div>
           )}
@@ -193,11 +269,26 @@ export default function ChatLayout() {
       </aside>
 
       {/* Main Chat Area */}
-      <main className="flex-1 flex flex-col h-full bg-white relative">
-        <div className="flex-1 overflow-y-auto p-6 md:p-10 space-y-6 bg-slate-50/50">
-          <div className="max-w-3xl mx-auto space-y-8 pb-10">
+      <main className="flex-1 flex flex-col h-full bg-white relative w-full overflow-hidden">
+        {/* Mobile Header */}
+        <div className="md:hidden flex items-center justify-between p-4 bg-white border-b border-slate-200 shrink-0">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-lg bg-indigo-600 text-white flex items-center justify-center">
+              <Sparkles size={18} />
+            </div>
+            <h2 className="text-lg font-bold bg-clip-text text-transparent bg-gradient-to-r from-indigo-600 to-blue-600">
+              RH IA UniFECAF
+            </h2>
+          </div>
+          <button onClick={() => setIsSidebarOpen(true)} className="p-2 text-slate-600 hover:bg-slate-100 rounded-lg transition-colors">
+            <Menu size={24} />
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-4 md:p-10 space-y-6 bg-slate-50/50">
+          <div className="max-w-5xl w-full mx-auto space-y-8 pb-10">
             {messages.map((m) => (
-              <div key={m.id || crypto.randomUUID()} className={`flex gap-4 ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+              <div key={m.id || crypto.randomUUID()} className={`flex gap-4 animate-fade-in ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                 {m.role === 'ai' && (
                   <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-blue-600 text-white flex items-center justify-center shrink-0 shadow-md mt-1">
                     <Sparkles size={20} />
@@ -251,8 +342,8 @@ export default function ChatLayout() {
         </div>
 
         {/* Input Area */}
-        <div className="p-4 md:p-6 bg-white border-t border-slate-200 w-full">
-          <div className="max-w-3xl mx-auto">
+        <div className="p-4 md:p-6 bg-white border-t border-slate-200 w-full shrink-0">
+          <div className="max-w-5xl mx-auto">
             {/* Quick Actions */}
             <div className="flex items-center gap-2 mb-3 overflow-x-auto pb-1">
               {FORMATS.map(f => {
@@ -263,7 +354,7 @@ export default function ChatLayout() {
                     key={crypto.randomUUID()}
                     type="button"
                     onClick={() => toggleFormat(f.id)}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-full transition-colors whitespace-nowrap border ${isActive ? 'bg-indigo-100 text-indigo-700 border-indigo-300' : 'bg-slate-100 hover:bg-indigo-50 text-slate-600 hover:text-indigo-700 border-slate-200 hover:border-indigo-200'}`}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-full transition-all whitespace-nowrap border hover:scale-105 active:scale-95 ${isActive ? 'bg-indigo-100 text-indigo-700 border-indigo-300' : 'bg-slate-100 hover:bg-indigo-50 text-slate-600 hover:text-indigo-700 border-slate-200 hover:border-indigo-200'}`}
                   >
                     <Icon size={14} />
                     {f.name}
@@ -276,7 +367,7 @@ export default function ChatLayout() {
               <button 
                 type="button"
                 onClick={() => setIsDeepThinking(!isDeepThinking)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-full transition-colors whitespace-nowrap border ${isDeepThinking ? 'bg-purple-100 text-purple-700 border-purple-300' : 'bg-slate-100 hover:bg-purple-50 text-slate-600 hover:text-purple-700 border-slate-200 hover:border-purple-200'}`}
+                className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-full transition-all whitespace-nowrap border hover:scale-105 active:scale-95 ${isDeepThinking ? 'bg-purple-100 text-purple-700 border-purple-300' : 'bg-slate-100 hover:bg-purple-50 text-slate-600 hover:text-purple-700 border-slate-200 hover:border-purple-200'}`}
               >
                 <BrainCircuit size={14} />
                 Pensamento Profundo {isDeepThinking ? '(Ativado)' : ''}
@@ -307,7 +398,7 @@ export default function ChatLayout() {
                   <button 
                     type="submit" 
                     disabled={!input.trim() || isLoading}
-                    className="p-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 disabled:opacity-50 disabled:hover:bg-indigo-600 transition-colors shadow-sm"
+                    className="p-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 disabled:opacity-50 disabled:hover:bg-indigo-600 transition-all shadow-sm hover:scale-105 active:scale-95"
                     title="Enviar"
                   >
                      <Send size={18} />

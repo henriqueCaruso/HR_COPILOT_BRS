@@ -56,32 +56,53 @@ service cloud.firestore {
       allow update: if false;
     }
 
-    function isValidChat() {
-      return incoming().keys().hasAll(['userId', 'prompt', 'response', 'model', 'isThinking', 'createdAt'])
-        && incoming().keys().size() >= 6
-        && incoming().keys().size() <= 8
+    function isValidChatSession() {
+      return incoming().keys().hasAll(['userId', 'title', 'createdAt', 'updatedAt'])
+        && incoming().keys().size() == 4
         && incoming().userId is string
-        && incoming().prompt is string
-        && incoming().prompt.size() <= 50000
-        && incoming().response is string
-        && incoming().response.size() <= 50000
-        && incoming().model is string
-        && incoming().model.size() <= 100
-        && incoming().isThinking is bool
-        && (!('format' in incoming().keys()) || incoming().format == null || (incoming().format is string && incoming().format.size() <= 100))
-        && (!('contextFolder' in incoming().keys()) || incoming().contextFolder == null || (incoming().contextFolder is string && incoming().contextFolder.size() <= 1000))
-        && incoming().createdAt is timestamp;
+        && incoming().title is string
+        && incoming().title.size() > 0 && incoming().title.size() <= 200
+        && incoming().createdAt is timestamp
+        && incoming().updatedAt is timestamp;
     }
 
-    match /chats/{chatId} {
+    match /chatSessions/{sessionId} {
       allow read: if isAuthenticated() && resource.data.userId == request.auth.uid;
       allow list: if isAuthenticated() && resource.data.userId == request.auth.uid;
       allow create: if isAuthenticated()
-        && isValidChat()
+        && isValidChatSession()
         && incoming().userId == request.auth.uid
-        && incoming().createdAt == request.time;
-      allow update: if false;
-      allow delete: if false;
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isAuthenticated()
+        && isValidChatSession()
+        && incoming().userId == existing().userId
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly(['title', 'updatedAt']);
+      allow delete: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      
+      function isSessionOwner() {
+        return get(/databases/$(database)/documents/chatSessions/$(sessionId)).data.userId == request.auth.uid;
+      }
+      
+      match /messages/{messageId} {
+        allow read: if isAuthenticated() && isSessionOwner();
+        allow list: if isAuthenticated() && isSessionOwner();
+        allow create: if isAuthenticated()
+          && isSessionOwner()
+          && incoming().keys().hasAll(['userId', 'role', 'text', 'createdAt'])
+          && incoming().keys().size() == 4
+          && incoming().userId is string
+          && incoming().userId == request.auth.uid
+          && incoming().userId == get(/databases/$(database)/documents/chatSessions/$(sessionId)).data.userId
+          && incoming().role in ['user', 'ai']
+          && incoming().text is string
+          && incoming().text.size() <= 50000
+          && incoming().createdAt == request.time;
+        allow update: if false;
+        allow delete: if false;
+      }
     }
   }
 }

@@ -24,21 +24,29 @@
       },
       "required": ["userId", "name", "fileUri", "mimeType", "category", "createdAt"]
     },
-    "Chat": {
-      "title": "Chat",
-      "description": "A chat interaction with the AI.",
+    "ChatSession": {
+      "title": "ChatSession",
+      "description": "A user's chat session.",
       "type": "object",
       "properties": {
         "userId": { "type": "string" },
-        "prompt": { "type": "string" },
-        "response": { "type": "string" },
-        "model": { "type": "string" },
-        "format": { "type": ["string", "null"] },
-        "isThinking": { "type": "boolean" },
-        "contextFolder": { "type": ["string", "null"] },
+        "title": { "type": "string" },
+        "createdAt": { "type": "number" },
+        "updatedAt": { "type": "number" }
+      },
+      "required": ["userId", "title", "createdAt", "updatedAt"]
+    },
+    "ChatMessage": {
+      "title": "ChatMessage",
+      "description": "Messages inside a chat session.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "role": { "type": "string" },
+        "text": { "type": "string" },
         "createdAt": { "type": "number" }
       },
-      "required": ["userId", "prompt", "response", "model", "isThinking", "createdAt"]
+      "required": ["userId", "role", "text", "createdAt"]
     }
   },
   "firestore": {
@@ -50,9 +58,13 @@
       "schema": { "$ref": "#/entities/Document" },
       "description": "Uploaded documents."
     },
-    "chats/{chatId}": {
-      "schema": { "$ref": "#/entities/Chat" },
-      "description": "Chat log."
+    "chatSessions/{sessionId}": {
+      "schema": { "$ref": "#/entities/ChatSession" },
+      "description": "Chat sessions container."
+    },
+    "chatSessions/{sessionId}/messages/{messageId}": {
+      "schema": { "$ref": "#/entities/ChatMessage" },
+      "description": "Messages in the session."
     }
   }
 }

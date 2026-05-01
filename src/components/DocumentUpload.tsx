@@ -173,7 +173,7 @@ export default function DocumentUpload({ onFolderSelected, activeFolder }: Docum
           ) : (
             <div className="flex flex-col items-center text-slate-500">
               <FileUp size={24} className="text-indigo-400 mb-2" />
-              <p className="text-xs font-medium text-slate-700">Clique ou arraste um PDF/TXT</p>
+              <p className="text-xs font-medium text-slate-700">Clique ou arraste um PDF, TXT, MD, CSV...</p>
             </div>
           )}
         </div>
