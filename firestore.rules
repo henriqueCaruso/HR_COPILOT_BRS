@@ -57,8 +57,9 @@ service cloud.firestore {
     }
 
     function isValidChat() {
-      return incoming().keys().hasAll(['userId', 'prompt', 'response', 'model', 'createdAt'])
-        && (incoming().keys().size() == 5 || (incoming().keys().size() == 6 && 'contextDocUri' in incoming().keys()))
+      return incoming().keys().hasAll(['userId', 'prompt', 'response', 'model', 'isThinking', 'createdAt'])
+        && incoming().keys().size() >= 6
+        && incoming().keys().size() <= 8
         && incoming().userId is string
         && incoming().prompt is string
         && incoming().prompt.size() <= 50000
@@ -66,7 +67,9 @@ service cloud.firestore {
         && incoming().response.size() <= 50000
         && incoming().model is string
         && incoming().model.size() <= 100
-        && (!('contextDocUri' in incoming().keys()) || incoming().contextDocUri == null || (incoming().contextDocUri is string && incoming().contextDocUri.size() <= 1000))
+        && incoming().isThinking is bool
+        && (!('format' in incoming().keys()) || incoming().format == null || (incoming().format is string && incoming().format.size() <= 100))
+        && (!('contextFolder' in incoming().keys()) || incoming().contextFolder == null || (incoming().contextFolder is string && incoming().contextFolder.size() <= 1000))
         && incoming().createdAt is timestamp;
     }
 

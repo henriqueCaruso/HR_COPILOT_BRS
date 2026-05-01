@@ -33,10 +33,12 @@
         "prompt": { "type": "string" },
         "response": { "type": "string" },
         "model": { "type": "string" },
-        "contextDocUri": { "type": ["string", "null"] },
+        "format": { "type": ["string", "null"] },
+        "isThinking": { "type": "boolean" },
+        "contextFolder": { "type": ["string", "null"] },
         "createdAt": { "type": "number" }
       },
-      "required": ["userId", "prompt", "response", "model", "createdAt"]
+      "required": ["userId", "prompt", "response", "model", "isThinking", "createdAt"]
     }
   },
   "firestore": {

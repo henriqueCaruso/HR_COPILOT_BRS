@@ -16,11 +16,11 @@ interface DocumentMeta {
 }
 
 interface DocumentUploadProps {
-  onDocumentSelected: (doc: { uri: string; mimeType: string; name: string } | null) => void;
-  activeDocUri?: string | null;
+  onFolderSelected: (folder: string | null, docs: Array<{uri: string, mimeType: string, name: string}>) => void;
+  activeFolder?: string | null;
 }
 
-export default function DocumentUpload({ onDocumentSelected, activeDocUri }: DocumentUploadProps) {
+export default function DocumentUpload({ onFolderSelected, activeFolder }: DocumentUploadProps) {
   const [isDragging, setIsDragging] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [successMsg, setSuccessMsg] = useState('');
@@ -76,11 +76,10 @@ export default function DocumentUpload({ onDocumentSelected, activeDocUri }: Doc
       // Expand the folder where it was uploaded
       setExpandedFolders(prev => ({...prev, [selectedCategory]: true}));
       
-      onDocumentSelected({
-        uri: uploadedInfo.uri,
-        mimeType: file.type,
-        name: file.name
-      });
+      const newDoc = { uri: uploadedInfo.uri, mimeType: file.type, name: file.name };
+      
+      // We do not immediately select the folder, just let user know it's ready.
+      // If we wanted to, we could trigger onFolderSelected here.
     } catch (err) {
       console.error(err);
       alert('Falha ao enviar documento.');
@@ -183,34 +182,39 @@ export default function DocumentUpload({ onDocumentSelected, activeDocUri }: Doc
         {CATEGORIES.map(category => {
           const catDocs = docsByCategory[category] || [];
           const isExpanded = expandedFolders[category];
+          const isActiveFolder = activeFolder === category;
           
           return (
             <div key={category} className="mb-1">
               <div 
-                className="flex items-center gap-2 p-2 hover:bg-slate-200 rounded-lg cursor-pointer transition-colors text-slate-700"
-                onClick={() => toggleFolder(category)}
+                className={`flex items-center gap-2 p-2 rounded-lg cursor-pointer transition-colors text-slate-700 ${isActiveFolder ? 'bg-indigo-100' : 'hover:bg-slate-200'}`}
+                onClick={() => {
+                  if (isActiveFolder) {
+                    onFolderSelected(null, []);
+                  } else {
+                    onFolderSelected(category, catDocs.map(d => ({ uri: d.fileUri, mimeType: d.mimeType, name: d.name })));
+                  }
+                }}
               >
-                {isExpanded ? <ChevronDown size={14} className="text-slate-400" /> : <ChevronRight size={14} className="text-slate-400" />}
-                <Folder size={16} className="text-indigo-500 fill-indigo-100" />
-                <span className="text-sm font-medium">{category}</span>
-                <span className="text-xs bg-slate-200 text-slate-500 px-1.5 py-0.5 rounded-full ml-auto">{catDocs.length}</span>
+                <div onClick={(e) => { e.stopPropagation(); toggleFolder(category); }}>
+                  {isExpanded ? <ChevronDown size={14} className="text-slate-400 hover:text-slate-700" /> : <ChevronRight size={14} className="text-slate-400 hover:text-slate-700" />}
+                </div>
+                <Folder size={16} className={`fill-indigo-100 ${isActiveFolder ? 'text-indigo-700' : 'text-indigo-500'}`} />
+                <span className={`text-sm ${isActiveFolder ? 'font-bold text-indigo-800' : 'font-medium'}`}>{category}</span>
+                <span className={`text-xs px-1.5 py-0.5 rounded-full ml-auto ${isActiveFolder ? 'bg-indigo-200 text-indigo-700' : 'bg-slate-200 text-slate-500'}`}>{catDocs.length}</span>
+                {isActiveFolder && <CheckCircle2 size={14} className="text-indigo-600 shrink-0 ml-1" />}
               </div>
               
               {isExpanded && catDocs.length > 0 && (
                 <div className="pl-6 pr-2 mt-1 flex flex-col gap-0.5">
                   {catDocs.map(doc => {
-                    const isActive = activeDocUri === doc.fileUri;
                     return (
                       <div 
                         key={doc.id}
-                        onClick={() => onDocumentSelected(isActive ? null : {uri: doc.fileUri, mimeType: doc.mimeType, name: doc.name})}
-                        className={`flex items-center gap-2 p-2 rounded-lg cursor-pointer text-sm transition-all ${
-                          isActive ? 'bg-indigo-50 text-indigo-700 font-medium' : 'hover:bg-slate-100 text-slate-600'
-                        }`}
+                        className="flex items-center gap-2 p-2 rounded-lg text-sm transition-all hover:bg-slate-100 text-slate-600"
                       >
-                        <FileText size={14} className={isActive ? 'text-indigo-600' : 'text-slate-400'} />
+                        <FileText size={14} className="text-slate-400" />
                         <span className="truncate">{doc.name}</span>
-                        {isActive && <CheckCircle2 size={14} className="ml-auto text-indigo-600 shrink-0" />}
                       </div>
                     )
                   })}

@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useAuth } from '../lib/AuthContext';
-import { LogOut, Send, Bot, User, FileText, Loader2, Sparkles, MessageSquare, Mail, BrainCircuit } from 'lucide-react';
+import { LogOut, Send, Bot, User, FileText, Loader2, Sparkles, MessageSquare, Mail, BrainCircuit, Copy, Check, BookOpen, Megaphone } from 'lucide-react';
 import DocumentUpload from './DocumentUpload';
 import { generateChatResponse } from '../lib/gemini';
 import { db } from '../lib/firebase';
@@ -19,6 +19,13 @@ const MODELS = [
   { id: 'gemini-3-flash-lite', name: 'Gemini 3 Flash-Lite (Econômico)' }
 ];
 
+const FORMATS = [
+  { id: 'email', name: 'E-mail', icon: Mail },
+  { id: 'whats', name: 'WhatsApp', icon: MessageSquare },
+  { id: 'manual', name: 'Manual', icon: BookOpen },
+  { id: 'comunicado', name: 'Comunicado', icon: Megaphone },
+];
+
 export default function ChatLayout() {
   const { user, logout } = useAuth();
   const [messages, setMessages] = useState<Message[]>([
@@ -26,8 +33,12 @@ export default function ChatLayout() {
   ]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [activeDoc, setActiveDoc] = useState<{uri: string, mimeType: string, name: string} | null>(null);
+  const [activeFolder, setActiveFolder] = useState<string | null>(null);
+  const [activeDocs, setActiveDocs] = useState<Array<{uri: string, mimeType: string, name: string}>>([]);
   const [activeModel, setActiveModel] = useState(MODELS[0].id);
+  const [activeFormat, setActiveFormat] = useState<string | null>(null);
+  const [isDeepThinking, setIsDeepThinking] = useState(false);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // Load chat history from Firestore
@@ -67,9 +78,9 @@ export default function ChatLayout() {
     scrollToBottom();
   }, [messages, isLoading]);
 
-  const handleSendMessage = async (e?: React.FormEvent, customPrompt?: string) => {
+  const handleSendMessage = async (e?: React.FormEvent) => {
     e?.preventDefault();
-    const userPrompt = customPrompt || input.trim();
+    const userPrompt = input.trim();
     if (!userPrompt || isLoading) return;
 
     setInput('');
@@ -77,7 +88,7 @@ export default function ChatLayout() {
     setIsLoading(true);
 
     try {
-      const aiResponse = await generateChatResponse(userPrompt, activeModel, activeDoc?.uri, activeDoc?.mimeType);
+      const aiResponse = await generateChatResponse(userPrompt, activeModel, activeDocs, isDeepThinking, activeFormat);
       
       // Save to history
       await addDoc(collection(db, 'chats'), {
@@ -85,7 +96,9 @@ export default function ChatLayout() {
         prompt: userPrompt,
         response: aiResponse,
         model: activeModel,
-        contextDocUri: activeDoc?.uri || null,
+        format: activeFormat || null,
+        isThinking: isDeepThinking,
+        contextFolder: activeFolder || null,
         createdAt: serverTimestamp()
       });
 
@@ -97,15 +110,14 @@ export default function ChatLayout() {
     }
   };
 
-  const insertQuickAction = (action: string) => {
-    let prefix = '';
-    if (action === 'email') prefix = 'Escreva uma resposta profissional para envio por e-mail: ';
-    if (action === 'whats') prefix = 'Escreva uma resposta curta e amigável para envio via WhatsApp: ';
-    if (action === 'pensamento') prefix = 'Analise profundamente este cenário e apresente prós, contras e uma recomendação: ';
-    
-    setInput(prefix);
-    const inputEl = document.getElementById('chatInput');
-    if (inputEl) inputEl.focus();
+  const toggleFormat = (formatId: string) => {
+    setActiveFormat(prev => prev === formatId ? null : formatId);
+  };
+
+  const handleCopy = (id: string, text: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedId(id);
+    setTimeout(() => setCopiedId(null), 2000);
   };
 
   return (
@@ -139,18 +151,21 @@ export default function ChatLayout() {
 
         <div className="flex-1 p-6 w-full flex flex-col gap-6 overflow-y-auto">
           <DocumentUpload 
-            onDocumentSelected={setActiveDoc} 
-            activeDocUri={activeDoc?.uri} 
+            onFolderSelected={(folder, docs) => {
+              setActiveFolder(folder);
+              setActiveDocs(docs);
+            }} 
+            activeFolder={activeFolder} 
           />
 
-          {activeDoc && (
+          {activeFolder && (
             <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-3 flex items-start gap-3">
-              <div className="p-2 bg-indigo-100 text-indigo-600 rounded-lg">
+              <div className="p-2 bg-indigo-100 text-indigo-600 rounded-lg shrink-0">
                 <FileText size={16} />
               </div>
-              <div>
-                <p className="text-sm font-semibold text-slate-800 truncate w-40" title={activeDoc.name}>{activeDoc.name}</p>
-                <p className="text-xs text-indigo-600 font-medium mt-0.5">Contexto Ativo</p>
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-slate-800 truncate" title={activeFolder}>Pasta: {activeFolder}</p>
+                <p className="text-xs text-indigo-600 font-medium mt-0.5">{activeDocs.length} documentos no contexto</p>
               </div>
             </div>
           )}
@@ -183,15 +198,24 @@ export default function ChatLayout() {
                   </div>
                 )}
                 
-                <div className={`max-w-[75%] rounded-2xl p-5 ${
+                <div className={`max-w-[75%] rounded-2xl p-5 relative group ${
                   m.role === 'user' 
                     ? 'bg-slate-800 text-white rounded-tr-sm shadow-md' 
                     : 'bg-white border border-slate-200 text-slate-800 rounded-tl-sm shadow-sm'
                 }`}>
                   {m.role === 'ai' ? (
-                     <div className="prose prose-sm md:prose-base prose-slate max-w-none">
-                       <Markdown>{m.text}</Markdown>
-                     </div>
+                     <>
+                       <div className="prose prose-sm md:prose-base prose-slate max-w-none">
+                         <Markdown>{m.text}</Markdown>
+                       </div>
+                       <button
+                         onClick={() => handleCopy(m.id, m.text)}
+                         className="absolute top-3 right-3 p-1.5 bg-slate-100/80 hover:bg-slate-200 text-slate-500 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity"
+                         title="Copiar texto"
+                       >
+                         {copiedId === m.id ? <Check size={16} className="text-emerald-600" /> : <Copy size={16} />}
+                       </button>
+                     </>
                   ) : (
                     <p className="whitespace-pre-wrap leading-relaxed text-sm md:text-base font-medium">{m.text}</p>
                   )}
@@ -225,26 +249,31 @@ export default function ChatLayout() {
           <div className="max-w-3xl mx-auto">
             {/* Quick Actions */}
             <div className="flex items-center gap-2 mb-3 overflow-x-auto pb-1">
+              {FORMATS.map(f => {
+                const Icon = f.icon;
+                const isActive = activeFormat === f.id;
+                return (
+                  <button 
+                    key={f.id}
+                    type="button"
+                    onClick={() => toggleFormat(f.id)}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-full transition-colors whitespace-nowrap border ${isActive ? 'bg-indigo-100 text-indigo-700 border-indigo-300' : 'bg-slate-100 hover:bg-indigo-50 text-slate-600 hover:text-indigo-700 border-slate-200 hover:border-indigo-200'}`}
+                  >
+                    <Icon size={14} />
+                    {f.name}
+                  </button>
+                );
+              })}
+              
+              <div className="w-px h-6 bg-slate-200 mx-1 shrink-0"></div>
+
               <button 
-                onClick={() => insertQuickAction('email')}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-indigo-50 text-slate-600 hover:text-indigo-700 text-xs font-semibold rounded-full transition-colors whitespace-nowrap border border-slate-200 hover:border-indigo-200"
-              >
-                <Mail size={14} />
-                Resposta para E-mail
-              </button>
-              <button 
-                onClick={() => insertQuickAction('whats')}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-emerald-50 text-slate-600 hover:text-emerald-700 text-xs font-semibold rounded-full transition-colors whitespace-nowrap border border-slate-200 hover:border-emerald-200"
-              >
-                <MessageSquare size={14} />
-                Resposta para Whats
-              </button>
-              <button 
-                onClick={() => insertQuickAction('pensamento')}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-purple-50 text-slate-600 hover:text-purple-700 text-xs font-semibold rounded-full transition-colors whitespace-nowrap border border-slate-200 hover:border-purple-200"
+                type="button"
+                onClick={() => setIsDeepThinking(!isDeepThinking)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-full transition-colors whitespace-nowrap border ${isDeepThinking ? 'bg-purple-100 text-purple-700 border-purple-300' : 'bg-slate-100 hover:bg-purple-50 text-slate-600 hover:text-purple-700 border-slate-200 hover:border-purple-200'}`}
               >
                 <BrainCircuit size={14} />
-                Pensamento Profundo
+                Pensamento Profundo {isDeepThinking ? '(Ativado)' : ''}
               </button>
             </div>
 
@@ -267,7 +296,7 @@ export default function ChatLayout() {
                 />
                 <div className="flex justify-between items-center p-2 border-t border-slate-100 bg-slate-50 rounded-b-2xl">
                   <div className="text-xs text-slate-400 font-medium px-2">
-                    {activeDoc ? `Contexto: ${activeDoc.name}` : 'Sem documento de contexto'}
+                    {activeFolder ? `Contexto da Pasta: ${activeFolder}` : 'Sem contexto ativo'}
                   </div>
                   <button 
                     type="submit" 
@@ -279,6 +308,9 @@ export default function ChatLayout() {
                   </button>
                 </div>
               </div>
+              <p className="text-xs text-slate-400 mt-3 text-center">
+                Atenção: Não insira dados pessoais sensíveis (LGPD). A IA pode gerar informações imprecisas ou com vieses.
+              </p>
             </form>
           </div>
         </div>
