@@ -58,15 +58,24 @@ export default function DocumentUpload({ onFolderSelected, activeFolder }: Docum
     setIsUploading(true);
     setSuccessMsg('');
     try {
+      let mimeType = file.type;
+      if (!mimeType) {
+        const ext = file.name.split('.').pop()?.toLowerCase();
+        if (ext === 'md') mimeType = 'text/markdown';
+        else if (ext === 'csv') mimeType = 'text/csv';
+        else if (ext === 'pdf') mimeType = 'application/pdf';
+        else mimeType = 'text/plain';
+      }
+
       // 1. Upload to Gemini 
-      const uploadedInfo = await uploadDocument(file);
+      const uploadedInfo = await uploadDocument(file, mimeType);
       
       // 2. Save metadata to Firestore (for history/reference)
       await addDoc(collection(db, 'documents'), {
         userId: user?.uid,
         name: file.name,
         fileUri: uploadedInfo.uri,
-        mimeType: file.type,
+        mimeType: mimeType,
         category: selectedCategory,
         createdAt: serverTimestamp(),
       });
@@ -76,10 +85,6 @@ export default function DocumentUpload({ onFolderSelected, activeFolder }: Docum
       // Expand the folder where it was uploaded
       setExpandedFolders(prev => ({...prev, [selectedCategory]: true}));
       
-      const newDoc = { uri: uploadedInfo.uri, mimeType: file.type, name: file.name };
-      
-      // We do not immediately select the folder, just let user know it's ready.
-      // If we wanted to, we could trigger onFolderSelected here.
     } catch (err) {
       console.error(err);
       alert('Falha ao enviar documento.');
@@ -130,7 +135,7 @@ export default function DocumentUpload({ onFolderSelected, activeFolder }: Docum
              title="Selecione a pasta"
            >
              {CATEGORIES.map(c => (
-               <option key={c} value={c}>Pasta: {c}</option>
+               <option key={crypto.randomUUID()} value={c}>Pasta: {c}</option>
              ))}
            </select>
         </div>
@@ -185,7 +190,7 @@ export default function DocumentUpload({ onFolderSelected, activeFolder }: Docum
           const isActiveFolder = activeFolder === category;
           
           return (
-            <div key={category} className="mb-1">
+            <div key={crypto.randomUUID()} className="mb-1">
               <div 
                 className={`flex items-center gap-2 p-2 rounded-lg cursor-pointer transition-colors text-slate-700 ${isActiveFolder ? 'bg-indigo-100' : 'hover:bg-slate-200'}`}
                 onClick={() => {
@@ -210,7 +215,7 @@ export default function DocumentUpload({ onFolderSelected, activeFolder }: Docum
                   {catDocs.map(doc => {
                     return (
                       <div 
-                        key={doc.id}
+                        key={doc.id || crypto.randomUUID()}
                         className="flex items-center gap-2 p-2 rounded-lg text-sm transition-all hover:bg-slate-100 text-slate-600"
                       >
                         <FileText size={14} className="text-slate-400" />

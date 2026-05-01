@@ -8,14 +8,15 @@ export function getGeminiAI() {
   return new GoogleGenAI({ apiKey });
 }
 
-export async function uploadDocument(file: File) {
+export async function uploadDocument(file: File, mimeTypeOverride?: string) {
   const ai = getGeminiAI();
   try {
+    const mimeType = mimeTypeOverride || file.type || 'text/plain';
     // Attempt standard file upload
     const uploadedFile = await ai.files.upload({
       file: file,
       config: {
-        mimeType: file.type,
+        mimeType: mimeType,
         displayName: file.name,
       }
     });
@@ -31,21 +32,33 @@ export async function generateChatResponse(prompt: string, modelName: string, do
   const contents = [];
   
   if (documents && documents.length > 0) {
-    documents.forEach(doc => {
-      contents.push({
-        fileData: {
-          fileUri: doc.uri,
-          mimeType: doc.mimeType,
+    for (const doc of documents) {
+      try {
+        const fileNameMatch = doc.uri.match(/files\/[a-zA-Z0-9_-]+/);
+        const fileName = fileNameMatch ? fileNameMatch[0] : null;
+        
+        if (fileName) {
+          await ai.files.get({ name: fileName });
+          contents.push({
+            fileData: {
+              fileUri: doc.uri,
+              mimeType: doc.mimeType,
+            }
+          });
+        } else {
+          throw new Error("Invalid file URI format");
         }
-      });
-    });
+      } catch (err) {
+        console.warn("File URI dead or inaccessible, skipping:", doc.uri);
+      }
+    }
   }
   
   let formatInstruction = "";
-  if (activeFormat === 'email') formatInstruction = "O usuário solicitou que a resposta seja formatada estritamente como um E-mail profissional.";
-  if (activeFormat === 'whats') formatInstruction = "O usuário solicitou que a resposta seja formatada estritamente como uma mensagem curta e amigável para o WhatsApp.";
-  if (activeFormat === 'manual') formatInstruction = "O usuário solicitou a criação de um Manual estruturado, acadêmico e detalhado baseado nas informações informadas e no contexto.";
-  if (activeFormat === 'comunicado') formatInstruction = "O usuário solicitou a criação de um Comunicado Geral claro, direto e empático para todos os colaboradores/alunos.";
+  if (activeFormat === 'email') formatInstruction = "A resposta deve ser formatada estritamente como um E-mail profissional.";
+  if (activeFormat === 'whats') formatInstruction = "A resposta deve ser formatada estritamente como uma mensagem curta e amigável para o WhatsApp.";
+  if (activeFormat === 'manual') formatInstruction = "Crie um Manual estruturado, acadêmico e detalhado baseado nas informações.";
+  if (activeFormat === 'comunicado') formatInstruction = "Crie um Comunicado Geral claro, direto e empático para todos.";
 
   let finalPrompt = prompt;
   if (formatInstruction) {
@@ -53,17 +66,17 @@ export async function generateChatResponse(prompt: string, modelName: string, do
   }
 
   if (isDeepThinking) {
-    finalPrompt = `[MODO DE PENSAMENTO PROFUNDO ATIVADO]: Analise a solicitação do usuário passo a passo antes de responder. Avalie minuciosamente o contexto da base de conhecimento (RAG), o tom de voz da UniFECAF e os potenciais riscos de LGPD na comunicação. Após o raciocínio interno, gere APENAS o texto final da comunicação, encapsulado em um bloco de código markdown.\n\n${finalPrompt}`;
+    finalPrompt = `[MODO DE PENSAMENTO PROFUNDO ATIVADO]: Analise a solicitação passo a passo antes de responder. Avalie minuciosamente o contexto, o tom de voz da UniFECAF e potenciais riscos de LGPD. Após o raciocínio, gere APENAS o texto final da comunicação, SEM formatação markdown.\n\n${finalPrompt}`;
   }
   
   contents.push(finalPrompt);
 
   const config: any = {
-    systemInstruction: "You are RHIÁ, an HR Copilot for UniFECAF. Your role is to help Brazilian HR professionals generate corporate texts such as emails, announcements, and policies in Portuguese (pt-br). When provided with a document as context, base your answers on the principles and rules of that document. You MUST always return generated texts wrapped inside formatted markdown code blocks for easy copying.",
+    systemInstruction: "Você é RHIÁ, um Copiloto de RH da UniFECAF. Seu papel é auxiliar profissionais de RH brasileiros a gerar textos corporativos, como e-mails, comunicados e políticas, em português (pt-br). Baseie suas respostas nos documentos de contexto fornecidos. É ESTRITAMENTE PROIBIDO usar formatação Markdown. NÃO use blocos de código, NÃO use asteriscos para negrito e NÃO use hashtags. A saída deve ser 100% texto puro (plain text), perfeitamente formatado com quebras de linha padrão para copiar e colar diretamente no Outlook ou WhatsApp.",
   };
 
-  // Only apply thinkingConfig for Gemini 3 series, and only when deep thinking is explicitly requested
-  if (isDeepThinking && modelName?.includes("gemini-3")) {
+  // Only apply thinkingConfig for gemini-3.1-pro-preview when deep thinking is explicitly requested
+  if (isDeepThinking && modelName === "gemini-3.1-pro-preview") {
       config.thinkingConfig = { thinkingLevel: ThinkingLevel.HIGH };
   }
 

@@ -5,7 +5,8 @@ import DocumentUpload from './DocumentUpload';
 import { generateChatResponse } from '../lib/gemini';
 import { db } from '../lib/firebase';
 import { collection, addDoc, query, orderBy, onSnapshot, limit, where, serverTimestamp } from 'firebase/firestore';
-import Markdown from 'react-markdown';
+// Remove markdown since it's forbidden
+// import Markdown from 'react-markdown';
 
 interface Message {
   id: string;
@@ -15,8 +16,8 @@ interface Message {
 
 const MODELS = [
   { id: 'gemini-3.1-pro-preview', name: 'Gemini 3.1 Pro (Avançado)' },
-  { id: 'gemini-3-flash', name: 'Gemini 3 Flash (Rápido)' },
-  { id: 'gemini-3-flash-lite', name: 'Gemini 3 Flash-Lite (Econômico)' }
+  { id: 'gemini-3-flash-preview', name: 'Gemini 3 Flash (Rápido)' },
+  { id: 'gemini-3.1-flash-lite-preview', name: 'Gemini 3 Flash-Lite (Econômico)' }
 ];
 
 const FORMATS = [
@@ -56,8 +57,8 @@ export default function ChatLayout() {
       snapshot.docs.reverse().forEach(docSnap => {
         const data = docSnap.data();
         if (data.userId === user.uid) {
-           history.push({ id: docSnap.id + '-usr', role: 'user', text: data.prompt });
-           history.push({ id: docSnap.id + '-ai', role: 'ai', text: data.response });
+           history.push({ id: crypto.randomUUID(), role: 'user', text: data.prompt });
+           history.push({ id: crypto.randomUUID(), role: 'ai', text: data.response });
         }
       });
       if (history.length > 0) {
@@ -84,12 +85,16 @@ export default function ChatLayout() {
     if (!userPrompt || isLoading) return;
 
     setInput('');
-    setMessages(prev => [...prev, { id: Date.now().toString(), role: 'user', text: userPrompt }]);
+    setMessages(prev => [...prev, { id: crypto.randomUUID(), role: 'user', text: userPrompt }]);
     setIsLoading(true);
 
     try {
       const aiResponse = await generateChatResponse(userPrompt, activeModel, activeDocs, isDeepThinking, activeFormat);
       
+      // Use random UUID for the AI message to satisfy unique key constraint
+      const aiMessageId = crypto.randomUUID();
+      setMessages(prev => [...prev, { id: aiMessageId, role: 'ai', text: aiResponse }]);
+
       // Save to history
       await addDoc(collection(db, 'chats'), {
         userId: user?.uid,
@@ -102,9 +107,10 @@ export default function ChatLayout() {
         createdAt: serverTimestamp()
       });
 
-    } catch (error) {
+    } catch (error: any) {
       console.error(error);
-      setMessages(prev => [...prev, { id: 'err', role: 'ai', text: 'Ocorreu um erro ao gerar a resposta. Verifique a configuração ou sua conexão.' }]);
+      const errMsg = error?.message || 'Ocorreu um erro ao gerar a resposta. Verifique a configuração ou sua conexão.';
+      setMessages(prev => [...prev, { id: crypto.randomUUID(), role: 'ai', text: `Erro: ${errMsg}` }]);
     } finally {
       setIsLoading(false);
     }
@@ -145,7 +151,7 @@ export default function ChatLayout() {
             onChange={(e) => setActiveModel(e.target.value)}
             className="w-full bg-white border border-slate-200 rounded-lg p-2 text-sm text-slate-700 outline-none focus:border-indigo-500 shadow-sm transition-all"
           >
-            {MODELS.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+            {MODELS.map(m => <option key={crypto.randomUUID()} value={m.id}>{m.name}</option>)}
           </select>
         </div>
 
@@ -191,7 +197,7 @@ export default function ChatLayout() {
         <div className="flex-1 overflow-y-auto p-6 md:p-10 space-y-6 bg-slate-50/50">
           <div className="max-w-3xl mx-auto space-y-8 pb-10">
             {messages.map((m) => (
-              <div key={m.id} className={`flex gap-4 ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+              <div key={m.id || crypto.randomUUID()} className={`flex gap-4 ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                 {m.role === 'ai' && (
                   <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-blue-600 text-white flex items-center justify-center shrink-0 shadow-md mt-1">
                     <Sparkles size={20} />
@@ -205,11 +211,11 @@ export default function ChatLayout() {
                 }`}>
                   {m.role === 'ai' ? (
                      <>
-                       <div className="prose prose-sm md:prose-base prose-slate max-w-none">
-                         <Markdown>{m.text}</Markdown>
+                       <div className="text-sm md:text-base whitespace-pre-wrap leading-relaxed">
+                         {m.text}
                        </div>
                        <button
-                         onClick={() => handleCopy(m.id, m.text)}
+                         onClick={() => handleCopy(m.id || '', m.text)}
                          className="absolute top-3 right-3 p-1.5 bg-slate-100/80 hover:bg-slate-200 text-slate-500 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity"
                          title="Copiar texto"
                        >
@@ -254,7 +260,7 @@ export default function ChatLayout() {
                 const isActive = activeFormat === f.id;
                 return (
                   <button 
-                    key={f.id}
+                    key={crypto.randomUUID()}
                     type="button"
                     onClick={() => toggleFormat(f.id)}
                     className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-full transition-colors whitespace-nowrap border ${isActive ? 'bg-indigo-100 text-indigo-700 border-indigo-300' : 'bg-slate-100 hover:bg-indigo-50 text-slate-600 hover:text-indigo-700 border-slate-200 hover:border-indigo-200'}`}
